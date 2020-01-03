@@ -122,6 +122,8 @@ type Server struct {
 
 	pubsub *pubsub
 	hookex expire.List
+
+	sh SHooks
 }
 
 // Serve starts a new tile38 server
@@ -152,6 +154,16 @@ func Serve(host string, port int, dir string, http bool) error {
 		http:     http,
 		pubsub:   newPubsub(),
 	}
+
+	// Initializes server hooks
+	var hookErr error
+	server.sh, hookErr = NewServerHooks(*server)
+	if hookErr != nil {
+		log.Fatalf("cannot instantiate server hooks %s", hookErr.Error())
+	}
+
+	// This can be made async by the hook implementation
+	server.sh.PreStartHook()
 
 	server.hookex.Expired = func(item expire.Item) {
 		switch v := item.(type) {
@@ -939,6 +951,12 @@ func (server *Server) reset() {
 func (server *Server) command(msg *Message, client *Client) (
 	res resp.Value, d commandDetails, err error,
 ) {
+	// TODO : Add a config check isPreCmdHookEnabled before executing
+	if err = server.sh.PreCmdHook(*msg); err != nil {
+		err = errCannotExecuteServerHook
+		return
+	}
+
 	switch msg.Command() {
 	default:
 		err = fmt.Errorf("unknown command '%s'", msg.Args[0])
